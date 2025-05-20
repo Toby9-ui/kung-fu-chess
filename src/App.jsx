@@ -150,6 +150,8 @@ const Model = forwardRef((props, ref) => {
 
   // Animation switching logic
   useEffect(() => {
+    console.log(`[AnimEffect Entry] Effect triggered. isMoving: ${isMoving}, attackReq: ${attackRequested.current}, emoteReq: ${emoteRequested.current}, triggerAnimEffect: ${triggerAnimationEffect}`);
+
     if (!actions || Object.keys(actions).length === 0 || !mixer) {
       return;
     }
@@ -231,38 +233,64 @@ const Model = forwardRef((props, ref) => {
     }
 
     // --- Idle/Move Logic (Lowest Priority) --- 
-    console.log('[AnimEffect Debug] Proceeding to Idle/Move logic.'); 
-    let newActionToPlay = null;
+    let targetAction = null;
     if (isMoving && moveAction) {
-      newActionToPlay = moveAction;
-    } else if (idleAction) {
-      newActionToPlay = idleAction;
+      targetAction = moveAction;
+    } else if (!isMoving && idleAction) {
+      targetAction = idleAction;
+    } else if (!isMoving && !idleAction && moveAction) { // Fallback if idle is missing but move exists
+      console.warn("[AnimEffect] Idle action not found, and not moving. Using moveAction as fallback idle if available, but this is not ideal.");
+      // Or, if you prefer to ensure it's truly idle, use the first available action if idleAction is missing.
+      // targetAction = Object.values(actions)[0]; 
+      targetAction = idleAction || Object.values(actions)[0]; // Fallback to first if idle not found
     } else {
-      if (Object.values(actions).length > 0 && !idleAction) {
-        console.warn("[AnimEffect] Idle action not found, trying first available action for idle.");
-        newActionToPlay = Object.values(actions)[0];
-      } else {
-        console.warn('[AnimEffect] No suitable idle or move animation found, and no fallback available.');
-      }
+      console.warn('[AnimEffect] No suitable idle or move animation found for current state.');
+      return; // No action to take
     }
 
-    if (newActionToPlay) {
-      if (currentAction.current !== newActionToPlay) {
-        const oldActionName = currentAction.current ? currentAction.current.getClip().name : 'null';
-        console.log(`[AnimEffect] Switching action. Old: '${oldActionName}' New: '${newActionToPlay.getClip().name}'`);
-        if (currentAction.current) {
-          currentAction.current.fadeOut(0.5);
+    if (currentAction.current === targetAction) {
+        // Already playing the correct animation. Ensure it's running and looped.
+        if (!targetAction.isRunning()) {
+            console.log(`[AnimEffect] Target action ${targetAction.getClip().name} was not running. Playing.`);
+            targetAction.play();
         }
-        newActionToPlay.reset().fadeIn(0.5).play();
-        currentAction.current = newActionToPlay;
-      }
-    } else {
-      if (currentAction.current) {
-        console.log('[AnimEffect] No new action to play, fading out current action:', currentAction.current.getClip().name);
-        currentAction.current.fadeOut(0.5);
-        currentAction.current = null;
-      }
+        if (targetAction.loop !== THREE.LoopRepeat) { // Check if it's set to loop
+            targetAction.setLoop(THREE.LoopRepeat, Infinity);
+            console.log(`[AnimEffect] Ensured ${targetAction.getClip().name} is LoopRepeat.`);
+        }
+        return; // Nothing more to do if already on the correct action
     }
+
+    // If we've reached here, it means currentAction.current !== targetAction, so a switch is needed.
+    console.log(`[AnimEffect Debug] Proceeding to switch. Current: ${currentAction.current ? currentAction.current.getClip().name : 'null'}, Target: ${targetAction ? targetAction.getClip().name : 'null'}`); 
+    
+    if (currentAction.current) {
+      currentAction.current.fadeOut(0.2);
+    }
+
+    if (targetAction) {
+        targetAction.reset();
+        targetAction.setLoop(THREE.LoopRepeat, Infinity); // Ensure idle/move loops
+
+        // --- TEMPORARY DIAGNOSTIC CODE --- 
+        if (targetAction.getClip().name === MOVEMENT_ANIM_NAME) {
+            console.log(`[AnimEffect] Slowing down ${MOVEMENT_ANIM_NAME} for diagnostics.`);
+            targetAction.timeScale = 0.2; // Play at 20% speed. Adjust as needed (e.g., 0.5 for half speed)
+        } else {
+            targetAction.timeScale = 1; // Ensure other animations run at normal speed
+        }
+        // --- END TEMPORARY DIAGNOSTIC CODE ---
+
+        targetAction.fadeIn(0.2).play();
+        currentAction.current = targetAction;
+        console.log(`[AnimEffect] Switched to action: ${targetAction.getClip().name}`);
+    } else if (currentAction.current) {
+        // No target action, but there was a current action, so fade it out.
+        currentAction.current.fadeOut(0.2);
+        currentAction.current = null; 
+        console.log(`[AnimEffect] No target action, faded out previous action.`);
+    }
+
   }, [isMoving, actions, mixer, triggerAnimationEffect, IDLE_ANIM_NAME, MOVEMENT_ANIM_NAME, ATTACK_ANIM_NAME, EMOTE_ANIM_NAME]);
 
   useFrame((state, delta) => {
@@ -274,7 +302,7 @@ const Model = forwardRef((props, ref) => {
     if (keysPressed.current['a']) { moveDirection.x -= 1; currentlyMoving = true; }
     if (keysPressed.current['d']) { moveDirection.x += 1; currentlyMoving = true; }
 
-    if (modelRef && modelRef.current && currentlyMoving) {
+    if (modelRef.current) {
       // Calculate direction based on camera
       const cameraDirection = new THREE.Vector3();
       state.camera.getWorldDirection(cameraDirection);
@@ -302,7 +330,7 @@ const Model = forwardRef((props, ref) => {
     // Update isMoving state only if it changes
     setIsMoving(prevIsMoving => {
       if (prevIsMoving !== currentlyMoving) {
-        // console.log(`[useFrame] isMoving changing from ${prevIsMoving} to ${currentlyMoving}`);
+        console.log(`[useFrame] isMoving changing from ${prevIsMoving} to ${currentlyMoving}`);
         return currentlyMoving;
       }
       return prevIsMoving;
