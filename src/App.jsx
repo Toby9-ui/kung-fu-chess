@@ -6,9 +6,9 @@ import ChessboardFloor from './ChessboardFloor'; // Added back missing import
 import { OrbitControls } from '@react-three/drei'; // Added OrbitControls import
 
 // --- Define camera constants for FollowCamera ---
-const CAMERA_LOCAL_OFFSET = new THREE.Vector3(-3.0, 5.5, -7); // Camera position: more left (-X), even higher (Y), same distance back (Z)
-const CAMERA_LOOK_AT_OFFSET = new THREE.Vector3(0, 1.0, 0); // Point directly at the model to center it in view
-const CAMERA_SMOOTH_SPEED = 3.0; // Reduced for smoother camera movement
+const CAMERA_LOCAL_OFFSET = new THREE.Vector3(0, 3.0, -8); // Camera position: directly behind (negative Z), moderate height (Y)
+const CAMERA_LOOK_AT_OFFSET = new THREE.Vector3(0, 1.5, 0); // Point at the upper body of the model
+const CAMERA_SMOOTH_SPEED = 5.0; // Increased for more responsive camera movement
 // --------------------------------------------------
 
 // --- Define unique animation names --- 
@@ -303,11 +303,12 @@ const Model = forwardRef((props, ref) => {
   useFrame((state, delta) => {
     const moveDirection = new THREE.Vector3();
     let currentlyMoving = false;
+    let isTurning = false;
 
     if (keysPressed.current['w']) { moveDirection.z -= 1; currentlyMoving = true; }
     if (keysPressed.current['s']) { moveDirection.z += 1; currentlyMoving = true; }
-    if (keysPressed.current['a']) { moveDirection.x -= 1; currentlyMoving = true; }
-    if (keysPressed.current['d']) { moveDirection.x += 1; currentlyMoving = true; }
+    if (keysPressed.current['a']) { isTurning = true; currentlyMoving = true; }
+    if (keysPressed.current['d']) { isTurning = true; currentlyMoving = true; }
 
     if (modelRef.current) {
       // Calculate direction based on camera
@@ -318,23 +319,42 @@ const Model = forwardRef((props, ref) => {
 
       const right = new THREE.Vector3().crossVectors(state.camera.up, cameraDirection).normalize();
       
+      // Handle rotation first (separate from movement)
+      const currentRotation = modelRef.current.quaternion.clone();
+      const rotationSpeed = 0.05; // Adjust rotation speed as needed
+      
+      if (keysPressed.current['a']) {
+        // Rotate left (counter-clockwise around Y axis)
+        const turnLeft = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationSpeed);
+        currentRotation.premultiply(turnLeft);
+      }
+      
+      if (keysPressed.current['d']) {
+        // Rotate right (clockwise around Y axis)
+        const turnRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -rotationSpeed);
+        currentRotation.premultiply(turnRight);
+      }
+      
+      // Apply rotation
+      modelRef.current.quaternion.copy(currentRotation);
+      
+      // Handle forward/backward movement along the character's forward direction
+      const characterForward = new THREE.Vector3(0, 0, -1).applyQuaternion(modelRef.current.quaternion);
+      const characterRight = new THREE.Vector3(1, 0, 0).applyQuaternion(modelRef.current.quaternion);
+      
       const finalMove = new THREE.Vector3();
-      if (keysPressed.current['w']) finalMove.add(cameraDirection);
-      if (keysPressed.current['s']) finalMove.sub(cameraDirection);
-      if (keysPressed.current['a']) finalMove.sub(right);
-      if (keysPressed.current['d']) finalMove.add(right);
-
-      finalMove.normalize().multiplyScalar(moveSpeed);
-      modelRef.current.position.add(finalMove);
-
-      // Rotate model to face movement direction
-      if (finalMove.lengthSq() > 0.001) { // Check if there is significant movement
-        const targetQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), finalMove.clone().normalize());
-        modelRef.current.quaternion.slerp(targetQuaternion, 0.15);
+      if (keysPressed.current['w']) finalMove.sub(characterForward); // Move forward (negative Z)
+      if (keysPressed.current['s']) finalMove.add(characterForward); // Move backward (positive Z)
+      
+      // Apply movement if there's any
+      if (finalMove.lengthSq() > 0.001) {
+        finalMove.normalize().multiplyScalar(moveSpeed);
+        modelRef.current.position.add(finalMove);
       }
     }
     
     // Update isMoving state only if it changes
+    // Now isMoving is true for both movement and turning
     setIsMoving(prevIsMoving => {
       if (prevIsMoving !== currentlyMoving) {
         console.log(`[useFrame] isMoving changing from ${prevIsMoving} to ${currentlyMoving}`);
@@ -357,48 +377,61 @@ function FollowCamera({ modelRef }) {
   // Set initial camera position and lookAt target
   useEffect(() => {
     if (modelRef.current) {
+      // Set initial position behind the character
       const modelPosition = new THREE.Vector3();
       modelRef.current.getWorldPosition(modelPosition);
+      
+      // Position camera behind and above the model
+      camera.position.set(
+        modelPosition.x, 
+        modelPosition.y + 3.0, 
+        modelPosition.z + 8.0
+      );
 
-      const initialWorldOffset = CAMERA_LOCAL_OFFSET.clone().applyQuaternion(modelRef.current.quaternion);
-      const initialCameraPosition = new THREE.Vector3().addVectors(modelPosition, initialWorldOffset);
-      camera.position.copy(initialCameraPosition);
-
-      const initialLookAtTarget = modelPosition.clone().add(CAMERA_LOOK_AT_OFFSET);
-      camera.lookAt(initialLookAtTarget);
+      // Look at the character
+      const lookAtPosition = modelPosition.clone().add(CAMERA_LOOK_AT_OFFSET);
+      camera.lookAt(lookAtPosition);
     }
   }, [modelRef, camera]); // Effect runs when modelRef or camera instance changes
 
   useFrame((state, delta) => {
     if (modelRef.current) {
+      // Get current model position
       const modelPosition = new THREE.Vector3();
-      modelRef.current.getWorldPosition(modelPosition); // Get model's current world position
-
-      // Calculate desired camera position (behind the model, considering its rotation)
-      const worldOffset = CAMERA_LOCAL_OFFSET.clone().applyQuaternion(modelRef.current.quaternion);
-      const desiredCameraPosition = new THREE.Vector3().addVectors(modelPosition, worldOffset);
+      modelRef.current.getWorldPosition(modelPosition);
       
-      // Ensure camera never goes below the floor level (minimum height of 2.0 units)
+      // Get model's forward direction vector
+      const forward = new THREE.Vector3();
+      modelRef.current.getWorldDirection(forward);
+      forward.negate(); // Reverse it to get the direction behind the model
+      
+      // Calculate camera position: behind the model based on its orientation
+      const distance = Math.abs(CAMERA_LOCAL_OFFSET.z); // Use absolute distance value
+      const cameraPosition = new THREE.Vector3();
+      cameraPosition.copy(modelPosition); // Start at model position
+      
+      // Move back along the model's facing direction
+      cameraPosition.x += forward.x * distance;
+      cameraPosition.z += forward.z * distance;
+      
+      // Add height offset
+      cameraPosition.y = modelPosition.y + CAMERA_LOCAL_OFFSET.y;
+      
+      // Ensure minimum height
       const MIN_CAMERA_HEIGHT = 2.0;
-      if (desiredCameraPosition.y < MIN_CAMERA_HEIGHT) {
-        desiredCameraPosition.y = MIN_CAMERA_HEIGHT;
+      if (cameraPosition.y < MIN_CAMERA_HEIGHT) {
+        cameraPosition.y = MIN_CAMERA_HEIGHT;
       }
 
-      // Calculate desired look-at target (e.g., model's torso)
-      const desiredLookAtTarget = modelPosition.clone().add(CAMERA_LOOK_AT_OFFSET);
+      // Calculate look-at position (slightly above the model)
+      const lookAtPosition = modelPosition.clone().add(CAMERA_LOOK_AT_OFFSET);
 
-      // Smoothly interpolate camera's position
+      // Smoothly move camera to desired position
       const lerpFactor = 1.0 - Math.exp(-CAMERA_SMOOTH_SPEED * delta);
-      state.camera.position.lerp(desiredCameraPosition, lerpFactor);
+      state.camera.position.lerp(cameraPosition, lerpFactor);
       
-      // Ensure camera is never below floor after lerping
-      if (state.camera.position.y < MIN_CAMERA_HEIGHT) {
-        state.camera.position.y = MIN_CAMERA_HEIGHT;
-      }
-
-      // Make camera look at the target
-      // For smoother lookAt, one could lerp a temporary lookAt vector, but direct lookAt is often fine.
-      state.camera.lookAt(desiredLookAtTarget);
+      // Look at the character
+      state.camera.lookAt(lookAtPosition);
     }
   });
 
