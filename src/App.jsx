@@ -3,6 +3,13 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
 import ChessboardFloor from './ChessboardFloor'; // Added back missing import
+import { OrbitControls } from '@react-three/drei'; // Added OrbitControls import
+
+// --- Define camera constants for FollowCamera ---
+const CAMERA_LOCAL_OFFSET = new THREE.Vector3(-3.0, 5.5, -7); // Camera position: more left (-X), even higher (Y), same distance back (Z)
+const CAMERA_LOOK_AT_OFFSET = new THREE.Vector3(0, 1.0, 0); // Point directly at the model to center it in view
+const CAMERA_SMOOTH_SPEED = 3.0; // Reduced for smoother camera movement
+// --------------------------------------------------
 
 // --- Define unique animation names --- 
 const IDLE_ANIM_NAME = 'Armature|mixamo.com|Layer0'; // Actual name from Idle.glb
@@ -136,7 +143,7 @@ const Model = forwardRef((props, ref) => {
   }, [modelRef]); // Re-run if modelRef changes, ensures listeners have access to it.
 
   useEffect(() => {
-    if (mixer) mixer.timeScale = 1;
+    if (mixer) mixer.timeScale = 2.5; // Significantly increased animation speed
   }, [mixer]);
 
   useEffect(() => {
@@ -343,12 +350,6 @@ const Model = forwardRef((props, ref) => {
 });
 Model.displayName = 'Model';
 
-// --- Define constants for the follow camera --- 
-const CAMERA_LOCAL_OFFSET = new THREE.Vector3(0, 2.5, -5); // (X, Y_Height, Z_Distance_Behind_Model)
-const CAMERA_LOOK_AT_OFFSET = new THREE.Vector3(0, 1.5, 0); // Offset from model's origin to look at (e.g., torso)
-const CAMERA_SMOOTH_SPEED = 7; // Larger is faster
-// ----------------------------------------------------------
-
 // --- FollowCamera Component --- 
 function FollowCamera({ modelRef }) {
   const { camera } = useThree();
@@ -376,6 +377,12 @@ function FollowCamera({ modelRef }) {
       // Calculate desired camera position (behind the model, considering its rotation)
       const worldOffset = CAMERA_LOCAL_OFFSET.clone().applyQuaternion(modelRef.current.quaternion);
       const desiredCameraPosition = new THREE.Vector3().addVectors(modelPosition, worldOffset);
+      
+      // Ensure camera never goes below the floor level (minimum height of 2.0 units)
+      const MIN_CAMERA_HEIGHT = 2.0;
+      if (desiredCameraPosition.y < MIN_CAMERA_HEIGHT) {
+        desiredCameraPosition.y = MIN_CAMERA_HEIGHT;
+      }
 
       // Calculate desired look-at target (e.g., model's torso)
       const desiredLookAtTarget = modelPosition.clone().add(CAMERA_LOOK_AT_OFFSET);
@@ -383,6 +390,11 @@ function FollowCamera({ modelRef }) {
       // Smoothly interpolate camera's position
       const lerpFactor = 1.0 - Math.exp(-CAMERA_SMOOTH_SPEED * delta);
       state.camera.position.lerp(desiredCameraPosition, lerpFactor);
+      
+      // Ensure camera is never below floor after lerping
+      if (state.camera.position.y < MIN_CAMERA_HEIGHT) {
+        state.camera.position.y = MIN_CAMERA_HEIGHT;
+      }
 
       // Make camera look at the target
       // For smoother lookAt, one could lerp a temporary lookAt vector, but direct lookAt is often fine.
@@ -396,37 +408,34 @@ function FollowCamera({ modelRef }) {
 
 export default function App() {
   const modelRef = useRef();
+
   return (
-    <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }}>
-      <Canvas 
-        shadows 
-        camera={{ position: [0, 2.5, -5], fov: 50 }} // Adjusted initial camera for follow-cam style
-        style={{ background: '#202020' }}
-      >
-        <ambientLight intensity={0.5} />
-        <directionalLight 
-          position={[10, 10, 5]} 
-          intensity={1.5} 
-          castShadow 
-          shadow-mapSize-width={2048} 
-          shadow-mapSize-height={2048} 
-          shadow-camera-far={50}
-          shadow-camera-left={-10}
-          shadow-camera-right={10}
-          shadow-camera-top={10}
-          shadow-camera-bottom={-10}
-        />
-        <Suspense fallback={null}>
-          <Model ref={modelRef} />
-          <ChessboardFloor size={50} />
-        </Suspense>
-        <FollowCamera modelRef={modelRef} /> {/* Added FollowCamera */}
-      </Canvas>
-    </div>
+    <Canvas
+      shadows
+      camera={{ position: [0, 2, 5], fov: 50 }} 
+      style={{ height: '100vh', width: '100vw', background: '#222' }}
+    >
+      <ambientLight intensity={0.5} />
+      <directionalLight
+        position={[10, 10, 5]}
+        intensity={1.5} 
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+      />
+      <Suspense fallback={null}>
+        {/* Set model position with negative Y value to place it on the floor */}
+        <Model ref={modelRef} position={[0, -2, 0]} scale={1.0} />
+      </Suspense>
+      <ChessboardFloor size={20} divisions={16} />
+      {/* Render FollowCamera unconditionally; it checks modelRef internally */}
+      <FollowCamera modelRef={modelRef} /> 
+      <OrbitControls />
+    </Canvas>
   );
 }
 
 useGLTF.preload('/model.glb');
 useGLTF.preload('/Idle.glb');
-useGLTF.preload('/Kicking.glb'); // Preload attack animation
-useGLTF.preload('/Swing Dancing.glb'); // Preload emote animation
+useGLTF.preload('/Kicking.glb'); 
+useGLTF.preload('/Swing Dancing.glb'); 
