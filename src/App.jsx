@@ -211,6 +211,7 @@ const Model = forwardRef((props, ref) => {
             currentAction.current.fadeOut(0.2);
         }
         emoteAction.reset().setLoop(THREE.LoopOnce, 1).play(); // Play once for now
+        emoteAction.timeScale = 0.5; // Slow down the emote animation to half speed
         emoteAction.clampWhenFinished = true;
         currentAction.current = emoteAction;
 
