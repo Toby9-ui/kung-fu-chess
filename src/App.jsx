@@ -440,13 +440,98 @@ function FollowCamera({ modelRef }) {
 }
 // ----------------------------------------------------------
 
+// Menu component for the Kung Fu Chess UI
+const Menu = () => {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '20px',
+      left: '20px',
+      zIndex: 1000,
+      background: 'rgba(0, 0, 0, 0.7)',
+      padding: '15px',
+      borderRadius: '10px',
+      color: 'white',
+      fontFamily: 'Arial, sans-serif',
+      textAlign: 'center',
+      boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)'
+    }}>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '10px'
+      }}>
+        <div style={{
+          fontSize: '32px',
+          marginBottom: '5px',
+          filter: 'drop-shadow(0 0 5px rgba(255, 215, 0, 0.8))'
+        }}>
+          ♔
+        </div>
+        <h1 style={{
+          margin: '0',
+          fontSize: '24px',
+          fontWeight: 'bold',
+          background: 'linear-gradient(45deg, #ffd700, #ff8c00)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
+        }}>
+          KUNG FU CHESS
+        </h1>
+        <div style={{
+          display: 'flex',
+          gap: '10px',
+          marginTop: '10px'
+        }}>
+          <button style={{
+            padding: '8px 20px',
+            background: 'linear-gradient(45deg, #4CAF50, #2E7D32)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+            transition: 'transform 0.2s, box-shadow 0.2s'
+          }}
+          onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+          onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            New Game
+          </button>
+          <button style={{
+            padding: '8px 20px',
+            background: 'linear-gradient(45deg, #2196F3, #1976D2)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+            transition: 'transform 0.2s, box-shadow 0.2s'
+          }}
+          onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+          onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            How to Play
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const modelRef = useRef();
 
   return (
+    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+      <Menu />
     <Canvas
       shadows
-      camera={{ position: [0, 2, 5], fov: 50 }} 
+      camera={{ position: [-5, 2, 5], fov: 50 }} 
       style={{ height: '100vh', width: '100vw', background: '#222' }}
     >
       <ambientLight intensity={0.5} />
@@ -466,6 +551,7 @@ export default function App() {
       <FollowCamera modelRef={modelRef} /> 
       <OrbitControls />
     </Canvas>
+    </div>
   );
 }
 
