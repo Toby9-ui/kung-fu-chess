@@ -20,119 +20,84 @@ const EMOTE_ANIM_NAME = 'Dancing';                 // New unique name for the em
 const EMOTE_ANIM_ORIGINAL_NAME = 'Armature|mixamo.com|Layer0'; // Corrected: Name from Swing Dancing.glb (uses | and ends in Layer0)
 // ----------------------------------------------------------
 
-const Model = forwardRef((props, ref) => {
-  const { scene: modelScene, animations: modelAnimationsOriginal } = useGLTF('/model.glb');
-  const { animations: idleAnimationsOriginal } = useGLTF('/Idle.glb');
-  const { animations: attackAnimationsOriginal } = useGLTF('/Kicking.glb'); // Load attack animation
-  const { animations: emoteAnimationsOriginal } = useGLTF('/Swing Dancing.glb'); // Load emote animation
+const Model = forwardRef(({ modelPath, ...props }, ref) => {
+  const { scene: modelScene, animations: modelAnimationsOriginal } = useGLTF(modelPath);
+  const { animations: idleAnimationsOriginal } = useGLTF('/models/Idle.glb');
+  const { animations: attackAnimationsOriginal } = useGLTF('/models/Kicking.glb');
+  const { animations: emoteAnimationsOriginal } = useGLTF('/models/Swing Dancing.glb');
 
-  // State to hold the processed animations that will be passed to useAnimations
-  const [animationsToUse, setAnimationsToUse] = useState([]);
-
-  useEffect(() => {
-    console.log('[AnimationSetup] Processing loaded animations...');
-    let finalModelAnims = [];
-    if (modelAnimationsOriginal && modelAnimationsOriginal.length > 0) {
-      const clipToRename = modelAnimationsOriginal[0]; // Assuming the first animation in model.glb is for movement
-      const renamedClip = clipToRename.clone(); // Clone the AnimationClip
-      renamedClip.name = MOVEMENT_ANIM_NAME;    // Assign the new unique name
-      finalModelAnims.push(renamedClip);
-      console.log(`[AnimationSetup] Renamed model animation to: '${renamedClip.name}' (Original: '${clipToRename.name}')`);
-    } else {
-      console.warn("[AnimationSetup] model.glb has no animations.");
-    }
-
-    let finalIdleAnims = [];
-    if (idleAnimationsOriginal && idleAnimationsOriginal.length > 0) {
-      // Find the idle animation by its expected name
-      const idleClip = idleAnimationsOriginal.find(clip => clip.name === IDLE_ANIM_NAME);
-      if (idleClip) {
-        finalIdleAnims.push(idleClip);
-        console.log(`[AnimationSetup] Using idle animation from Idle.glb: '${idleClip.name}'`);
-      } else {
-        console.warn(`[AnimationSetup] Could not find idle animation named '${IDLE_ANIM_NAME}' in Idle.glb. Available names: ${idleAnimationsOriginal.map(c => c.name).join(', ')}. Using the first available clip from Idle.glb if any.`);
-        if (idleAnimationsOriginal.length > 0) finalIdleAnims.push(idleAnimationsOriginal[0]);
-      }
-    } else {
-      console.warn("[AnimationSetup] Idle.glb has no animations.");
-    }
-
-    let finalAttackAnims = [];
-    if (attackAnimationsOriginal && attackAnimationsOriginal.length > 0) {
-        const attackClip = attackAnimationsOriginal.find(clip => clip.name === KICK_ANIM_ORIGINAL_NAME);
-        if (attackClip) {
-            const renamedAttackClip = attackClip.clone();
-            renamedAttackClip.name = ATTACK_ANIM_NAME;
-            finalAttackAnims.push(renamedAttackClip);
-            console.log(`[AnimationSetup] Renamed attack animation to: '${renamedAttackClip.name}' (Original: '${KICK_ANIM_ORIGINAL_NAME}')`);
-        } else {
-            console.warn(`[AnimationSetup] Could not find attack animation named '${KICK_ANIM_ORIGINAL_NAME}' in Kicking.glb. Available: ${attackAnimationsOriginal.map(c=>c.name).join(', ')}.`);
-        }
-    } else {
-        console.warn("[AnimationSetup] Kicking.glb has no animations.");
-    }
-
-    let finalEmoteAnims = [];
-    if (emoteAnimationsOriginal && emoteAnimationsOriginal.length > 0) {
-        const emoteClip = emoteAnimationsOriginal.find(clip => clip.name === EMOTE_ANIM_ORIGINAL_NAME);
-        if (emoteClip) {
-            const renamedEmoteClip = emoteClip.clone();
-            renamedEmoteClip.name = EMOTE_ANIM_NAME;
-            finalEmoteAnims.push(renamedEmoteClip);
-            console.log(`[AnimationSetup] Renamed emote animation to: '${renamedEmoteClip.name}' (Original: '${EMOTE_ANIM_ORIGINAL_NAME}')`);
-        } else {
-            console.warn(`[AnimationSetup] Could not find emote animation named '${EMOTE_ANIM_ORIGINAL_NAME}' in Swing Dancing.glb. Available: ${emoteAnimationsOriginal.map(c=>c.name).join(', ')}.`);
-        }
-    } else {
-        console.warn("[AnimationSetup] Swing Dancing.glb has no animations.");
-    }
-    
-    setAnimationsToUse([...finalModelAnims, ...finalIdleAnims, ...finalAttackAnims, ...finalEmoteAnims]);
-
-  }, [modelAnimationsOriginal, idleAnimationsOriginal, attackAnimationsOriginal, emoteAnimationsOriginal]); // Rerun when original animations are loaded
-
-  const { actions, mixer } = useAnimations(animationsToUse, ref); // Pass the processed animations
-
-  // Log available actions once they are ready
-  useEffect(() => {
-    if (animationsToUse.length > 0 && Object.keys(actions).length > 0) {
-      console.log('[AnimationSetup] Animations prepared for useAnimations:', animationsToUse.map(a => `'${a.name}'`).join(', '));
-      console.log('[AnimationSetup] Available animation actions (from useAnimations):', Object.keys(actions).map(a => `'${a}'`).join(', '));
-    }
-  }, [animationsToUse, actions]);
-
+  // State for animation and movement
+  const [isMoving, setIsMoving] = useState(false);
   const keysPressed = useRef({});
   const moveSpeed = 0.05;
-  const modelRef = ref; // Use the forwarded ref for the model's group
-  const [isMoving, setIsMoving] = useState(false);
+  const rotationSpeed = 0.03;
   const currentAction = useRef(null);
-  const [triggerAnimationEffect, setTriggerAnimationEffect] = useState(0); // General trigger for re-evaluating animation effect
+  const [triggerAnimationEffect, setTriggerAnimationEffect] = useState(0);
   const attackRequested = useRef(false);
   const attackInProgress = useRef(false);
-  const emoteRequested = useRef(false); // For emote
-  const emoteInProgress = useRef(false); // For emote
+  const emoteRequested = useRef(false);
+  const emoteInProgress = useRef(false);
+  const targetRotation = useRef(0);
 
+  // Function to find and rename a walk animation
+  const processWalkAnimation = (animations, modelName) => {
+    if (!animations || animations.length === 0) {
+      console.warn(`[AnimationSetup] No animations found for ${modelName}`);
+      return null;
+    }
+
+    // Log available animations for debugging
+    console.log(`[AnimationSetup] Available animations for ${modelName}:`, 
+      animations.map(a => a.name).join(', '));
+
+    // Try to find a walk animation by name
+    const walkClip = animations.find(clip => 
+      clip.name.toLowerCase().includes('walk') || 
+      clip.name.toLowerCase().includes('run') ||
+      clip.name.toLowerCase().includes('move') ||
+      clip.name.toLowerCase().includes('layer0')
+    );
+
+    if (walkClip) {
+      const renamedClip = walkClip.clone();
+      renamedClip.name = MOVEMENT_ANIM_NAME;
+      console.log(`[AnimationSetup] Found walk animation for ${modelName}: '${renamedClip.name}' (Original: '${walkClip.name}')`);
+      return renamedClip;
+    }
+
+    // If no walk animation found, use the first animation as fallback
+    const fallbackClip = animations[0].clone();
+    fallbackClip.name = MOVEMENT_ANIM_NAME;
+    console.log(`[AnimationSetup] Using fallback animation for ${modelName}: '${fallbackClip.name}' (Original: '${animations[0].name}')`);
+    return fallbackClip;
+  };
+
+  // Add keyboard and mouse controls
   useEffect(() => {
-    const handleKeyDown = (event) => { 
-        const key = event.key.toLowerCase();
-        keysPressed.current[key] = true; 
-        if (key === 'e' && modelRef.current && !attackInProgress.current && !emoteInProgress.current) {
-            console.log('[Input] Emote requested (E key)');
-            emoteRequested.current = true;
-            setTriggerAnimationEffect(prev => prev + 1);
-        }
+    const handleKeyDown = (event) => {
+      const key = event.key.toLowerCase();
+      keysPressed.current[key] = true;
+      if (key === 'e' && !attackInProgress.current && !emoteInProgress.current) {
+        console.log('[Input] Emote requested (E key)');
+        emoteRequested.current = true;
+        setTriggerAnimationEffect(prev => prev + 1);
+      }
     };
-    const handleKeyUp = (event) => { keysPressed.current[event.key.toLowerCase()] = false; };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+
+    const handleKeyUp = (event) => {
+      keysPressed.current[event.key.toLowerCase()] = false;
+    };
 
     const handleMouseDown = (event) => {
-        if (event.button === 0 && modelRef.current && !attackInProgress.current && !emoteInProgress.current) { // Left click
-            console.log('[Input] Attack requested (left click)');
-            attackRequested.current = true;
-            setTriggerAnimationEffect(prev => prev + 1); 
-        }
+      if (event.button === 0 && !attackInProgress.current && !emoteInProgress.current) {
+        console.log('[Input] Attack requested (left click)');
+        attackRequested.current = true;
+        setTriggerAnimationEffect(prev => prev + 1);
+      }
     };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousedown', handleMouseDown);
 
     return () => {
@@ -140,234 +105,307 @@ const Model = forwardRef((props, ref) => {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousedown', handleMouseDown);
     };
-  }, [modelRef]); // Re-run if modelRef changes, ensures listeners have access to it.
+  }, []);
 
+  // Add model visibility debugging
   useEffect(() => {
-    if (mixer) mixer.timeScale = 2.5; // Significantly increased animation speed
-  }, [mixer]);
+    console.log('[Model] Loading model:', modelPath);
+    if (!modelScene) {
+      console.error('[Model] Failed to load model scene:', modelPath);
+      return;
+    }
+    console.log('[Model] Successfully loaded model:', modelPath);
+    console.log('[Model] Available animations:', modelAnimationsOriginal?.map(a => a.name).join(', '));
 
-  useEffect(() => {
+    // Debug model properties and adjust position
     modelScene.traverse((child) => {
       if (child.isMesh) {
+        console.log('[Model] Found mesh:', child.name);
+        console.log('[Model] Mesh position:', child.position);
+        console.log('[Model] Mesh scale:', child.scale);
+        console.log('[Model] Mesh visible:', child.visible);
+        
+        // Ensure mesh is visible and has proper material
+        child.visible = true;
         child.castShadow = true;
         child.receiveShadow = true;
+        
+        // Adjust position and scale based on model type
+        if (modelPath === '/models/queen/queen-omni.glb') {
+          // Queen model specific adjustments
+          child.position.y = 0;
+          // Adjust scale to be more proportional
+          child.scale.set(1.0, 1.0, 1.0);
+          // Ensure proper rotation
+          child.rotation.set(0, 0, 0);
+        } else {
+          // Default model adjustments
+          child.position.y = -2.0;
+          child.scale.set(1.0, 1.0, 1.0);
+        }
+        
+        // Ensure material is properly set
+        if (child.material) {
+          child.material.transparent = false;
+          child.material.opacity = 1;
+          child.material.needsUpdate = true;
+        }
       }
     });
-  }, [modelScene]);
+
+    // Adjust the entire model's position and scale
+    if (modelPath === '/models/queen/queen-omni.glb') {
+      modelScene.position.set(0, 0, 0);
+      modelScene.scale.set(1.0, 1.0, 1.0);
+      modelScene.rotation.set(0, 0, 0);
+    } else {
+      modelScene.position.y = -2.0;
+    }
+  }, [modelPath, modelScene, modelAnimationsOriginal]);
+
+  // State to hold the processed animations that will be passed to useAnimations
+  const [animationsToUse, setAnimationsToUse] = useState([]);
+  const [modelError, setModelError] = useState(null);
+
+  useEffect(() => {
+    console.log('[AnimationSetup] Processing loaded animations...');
+    
+    let finalAnimations = [];
+    
+    if (modelPath === '/models/queen/queen-omni.glb') {
+      // Skip animations for queen model
+      console.log('[AnimationSetup] Skipping animations for queen model');
+      setAnimationsToUse([]);
+      setModelError(null);
+      return;
+    }
+    
+    // Process animations for default model
+    if (modelAnimationsOriginal && modelAnimationsOriginal.length > 0) {
+      const walkClip = processWalkAnimation(modelAnimationsOriginal, 'default');
+      if (walkClip) {
+        finalAnimations.push(walkClip);
+      }
+    }
+
+    // Process attack animations
+    if (attackAnimationsOriginal && attackAnimationsOriginal.length > 0) {
+      const attackClip = attackAnimationsOriginal.find(clip => clip.name === KICK_ANIM_ORIGINAL_NAME);
+      if (attackClip) {
+        const renamedAttackClip = attackClip.clone();
+        renamedAttackClip.name = ATTACK_ANIM_NAME;
+        finalAnimations.push(renamedAttackClip);
+      }
+    }
+
+    // Process emote animations
+    if (emoteAnimationsOriginal && emoteAnimationsOriginal.length > 0) {
+      const emoteClip = emoteAnimationsOriginal.find(clip => clip.name === EMOTE_ANIM_ORIGINAL_NAME);
+      if (emoteClip) {
+        const renamedEmoteClip = emoteClip.clone();
+        renamedEmoteClip.name = EMOTE_ANIM_NAME;
+        finalAnimations.push(renamedEmoteClip);
+      }
+    }
+    
+    console.log('[AnimationSetup] Final animations:', finalAnimations.map(a => a.name).join(', '));
+    setAnimationsToUse(finalAnimations);
+    setModelError(null);
+  }, [modelPath, modelAnimationsOriginal, idleAnimationsOriginal, attackAnimationsOriginal, emoteAnimationsOriginal]);
+
+  const { actions, mixer } = useAnimations(animationsToUse, ref);
 
   // Animation switching logic
   useEffect(() => {
-    console.log(`[AnimEffect Entry] Effect triggered. isMoving: ${isMoving}, attackReq: ${attackRequested.current}, emoteReq: ${emoteRequested.current}, triggerAnimEffect: ${triggerAnimationEffect}`);
-
-    if (!actions || Object.keys(actions).length === 0 || !mixer) {
+    if (modelPath === '/models/queen/queen-omni.glb') {
+      // Skip animation logic for queen model
       return;
     }
 
+    if (!actions || Object.keys(actions).length === 0 || !mixer) {
+      console.log('[AnimationDebug] No actions or mixer available');
+      return;
+    }
+
+    console.log('[AnimationDebug] Available actions:', Object.keys(actions));
     const idleAction = actions[IDLE_ANIM_NAME];
     const moveAction = actions[MOVEMENT_ANIM_NAME];
     const attackAction = actions[ATTACK_ANIM_NAME];
-    const emoteAction = actions[EMOTE_ANIM_NAME]; // Get emote action
+    const emoteAction = actions[EMOTE_ANIM_NAME];
 
-    console.log(`[AnimEffect Debug] Evaluating: attackReq: ${attackRequested.current}, attackAction: ${!!attackAction}, !attackInProg: ${!attackInProgress.current}, emoteReq: ${emoteRequested.current}, emoteAction: ${!!emoteAction}, !emoteInProg: ${!emoteInProgress.current}`);
-
-    // --- Attack Logic (Highest Priority) --- 
+    // Attack Logic
     if (attackRequested.current && attackAction && !attackInProgress.current) {
-      attackRequested.current = false; 
+      attackRequested.current = false;
       attackInProgress.current = true;
-      emoteRequested.current = false; // Cancel any pending emote if attack starts
-      emoteInProgress.current = false; // Stop any active emote if attack starts
+      emoteRequested.current = false;
+      emoteInProgress.current = false;
 
-      console.log('[AnimEffect] Starting ATTACK animation:', ATTACK_ANIM_NAME);
       if (currentAction.current && currentAction.current !== attackAction) {
         currentAction.current.fadeOut(0.2);
       }
       attackAction.reset().setLoop(THREE.LoopOnce, 1).play();
-      attackAction.clampWhenFinished = true; 
+      attackAction.clampWhenFinished = true;
       currentAction.current = attackAction;
 
       const onAttackFinished = (event) => {
         if (event.action === attackAction) {
-          console.log('[AnimEffect] Attack animation finished.');
           attackInProgress.current = false;
           mixer.removeEventListener('finished', onAttackFinished);
-          setTriggerAnimationEffect(prev => prev + 1); 
+          setTriggerAnimationEffect(prev => prev + 1);
         }
       };
       mixer.addEventListener('finished', onAttackFinished);
-      return; 
-    }
-    if (attackInProgress.current) {
-      console.log('[AnimEffect Debug] Attack in progress, returning early.');
       return;
     }
 
-    // --- Emote Logic (Second Priority) ---
+    // Emote Logic
     if (emoteRequested.current && emoteAction && !emoteInProgress.current) {
-        emoteRequested.current = false;
-        emoteInProgress.current = true;
-        console.log('[AnimEffect] Starting EMOTE animation:', EMOTE_ANIM_NAME);
+      emoteRequested.current = false;
+      emoteInProgress.current = true;
 
-        if (currentAction.current && currentAction.current !== emoteAction) {
-            currentAction.current.fadeOut(0.2);
-        }
-        emoteAction.reset().setLoop(THREE.LoopOnce, 1).play(); // Play once for now
-        emoteAction.timeScale = 0.5; // Slow down the emote animation to half speed
-        emoteAction.clampWhenFinished = true;
-        currentAction.current = emoteAction;
+      if (currentAction.current && currentAction.current !== emoteAction) {
+        currentAction.current.fadeOut(0.2);
+      }
+      emoteAction.reset().setLoop(THREE.LoopOnce, 1).play();
+      emoteAction.timeScale = 0.5;
+      emoteAction.clampWhenFinished = true;
+      currentAction.current = emoteAction;
 
-        const onEmoteFinished = (event) => {
-            if (event.action === emoteAction) {
-                console.log('[AnimEffect] Emote animation finished.');
-                emoteInProgress.current = false;
-                mixer.removeEventListener('finished', onEmoteFinished);
-                setTriggerAnimationEffect(prev => prev + 1);
-            }
-        };
-        mixer.addEventListener('finished', onEmoteFinished);
-        return;
-    }
-    if (emoteInProgress.current) {
-        console.log('[AnimEffect Debug] Emote in progress, returning early.');
-        // If moving, interrupt emote
-        if (isMoving) {
-            console.log('[AnimEffect] Movement detected, interrupting emote.');
-            if (emoteAction) emoteAction.fadeOut(0.2); // Fade out current emote
-            emoteInProgress.current = false;
-            emoteRequested.current = false;
-            // Proceed to idle/move logic by not returning here, allowing it to take over.
-        } else {
-            return; // Continue emote if not moving
+      const onEmoteFinished = (event) => {
+        if (event.action === emoteAction) {
+          emoteInProgress.current = false;
+          mixer.removeEventListener('finished', onEmoteFinished);
+          setTriggerAnimationEffect(prev => prev + 1);
         }
+      };
+      mixer.addEventListener('finished', onEmoteFinished);
+      return;
     }
 
-    // --- Idle/Move Logic (Lowest Priority) --- 
+    // Idle/Move Logic
     let targetAction = null;
     if (isMoving && moveAction) {
+      console.log('[AnimationDebug] Switching to move animation');
       targetAction = moveAction;
     } else if (!isMoving && idleAction) {
+      console.log('[AnimationDebug] Switching to idle animation');
       targetAction = idleAction;
-    } else if (!isMoving && !idleAction && moveAction) { // Fallback if idle is missing but move exists
-      console.warn("[AnimEffect] Idle action not found, and not moving. Using moveAction as fallback idle if available, but this is not ideal.");
-      // Or, if you prefer to ensure it's truly idle, use the first available action if idleAction is missing.
-      // targetAction = Object.values(actions)[0]; 
-      targetAction = idleAction || Object.values(actions)[0]; // Fallback to first if idle not found
-    } else {
-      console.warn('[AnimEffect] No suitable idle or move animation found for current state.');
-      return; // No action to take
+    }
+
+    if (!targetAction) {
+      console.log('[AnimationDebug] No target action available');
+      return;
     }
 
     if (currentAction.current === targetAction) {
-        // Already playing the correct animation. Ensure it's running and looped.
-        if (!targetAction.isRunning()) {
-            console.log(`[AnimEffect] Target action ${targetAction.getClip().name} was not running. Playing.`);
-            targetAction.play();
-        }
-        if (targetAction.loop !== THREE.LoopRepeat) { // Check if it's set to loop
-            targetAction.setLoop(THREE.LoopRepeat, Infinity);
-            console.log(`[AnimEffect] Ensured ${targetAction.getClip().name} is LoopRepeat.`);
-        }
-        return; // Nothing more to do if already on the correct action
+      if (!targetAction.isRunning()) {
+        console.log('[AnimationDebug] Restarting current animation');
+        targetAction.play();
+      }
+      if (targetAction.loop !== THREE.LoopRepeat) {
+        targetAction.setLoop(THREE.LoopRepeat, Infinity);
+      }
+      return;
     }
 
-    // If we've reached here, it means currentAction.current !== targetAction, so a switch is needed.
-    console.log(`[AnimEffect Debug] Proceeding to switch. Current: ${currentAction.current ? currentAction.current.getClip().name : 'null'}, Target: ${targetAction ? targetAction.getClip().name : 'null'}`); 
-    
     if (currentAction.current) {
+      console.log('[AnimationDebug] Fading out current animation');
       currentAction.current.fadeOut(0.2);
     }
 
-    if (targetAction) {
-        targetAction.reset();
-        targetAction.setLoop(THREE.LoopRepeat, Infinity); // Ensure idle/move loops
-
-        // --- TEMPORARY DIAGNOSTIC CODE --- 
-        if (targetAction.getClip().name === MOVEMENT_ANIM_NAME) {
-            console.log(`[AnimEffect] Slowing down ${MOVEMENT_ANIM_NAME} for diagnostics.`);
-            targetAction.timeScale = 0.2; // Play at 20% speed. Adjust as needed (e.g., 0.5 for half speed)
-        } else {
-            targetAction.timeScale = 1; // Ensure other animations run at normal speed
-        }
-        // --- END TEMPORARY DIAGNOSTIC CODE ---
-
-        targetAction.fadeIn(0.2).play();
-        currentAction.current = targetAction;
-        console.log(`[AnimEffect] Switched to action: ${targetAction.getClip().name}`);
-    } else if (currentAction.current) {
-        // No target action, but there was a current action, so fade it out.
-        currentAction.current.fadeOut(0.2);
-        currentAction.current = null; 
-        console.log(`[AnimEffect] No target action, faded out previous action.`);
+    console.log('[AnimationDebug] Starting new animation:', targetAction.getClip().name);
+    targetAction.reset();
+    targetAction.setLoop(THREE.LoopRepeat, Infinity);
+    // Adjust animation speeds
+    if (targetAction.getClip().name === MOVEMENT_ANIM_NAME) {
+      targetAction.timeScale = modelPath === '/models/queen/queen-omni.glb' ? 0.5 : 1.0; // Slower for queen
+    } else if (targetAction.getClip().name === IDLE_ANIM_NAME) {
+      targetAction.timeScale = modelPath === '/models/queen/queen-omni.glb' ? 0.7 : 1.0; // Slightly slower for queen
+    } else {
+      targetAction.timeScale = 1.0; // Normal speed for other animations
     }
+    targetAction.fadeIn(0.2).play();
+    currentAction.current = targetAction;
+  }, [isMoving, actions, mixer, triggerAnimationEffect, modelPath]);
 
-  }, [isMoving, actions, mixer, triggerAnimationEffect, IDLE_ANIM_NAME, MOVEMENT_ANIM_NAME, ATTACK_ANIM_NAME, EMOTE_ANIM_NAME]);
-
+  // Movement and animation update
   useFrame((state, delta) => {
+    if (!ref.current) return;
+
     const moveDirection = new THREE.Vector3();
     let currentlyMoving = false;
     let isTurning = false;
 
-    if (keysPressed.current['w']) { moveDirection.z -= 1; currentlyMoving = true; }
-    if (keysPressed.current['s']) { moveDirection.z += 1; currentlyMoving = true; }
-    if (keysPressed.current['a']) { isTurning = true; currentlyMoving = true; }
-    if (keysPressed.current['d']) { isTurning = true; currentlyMoving = true; }
+    // Get camera direction for relative movement
+    const cameraDirection = new THREE.Vector3();
+    state.camera.getWorldDirection(cameraDirection);
+    cameraDirection.y = 0; // Keep movement horizontal
+    cameraDirection.normalize();
 
-    if (modelRef.current) {
-      // Calculate direction based on camera
-      const cameraDirection = new THREE.Vector3();
-      state.camera.getWorldDirection(cameraDirection);
-      cameraDirection.y = 0; // Keep movement horizontal
-      cameraDirection.normalize();
+    // Calculate right vector for strafing
+    const right = new THREE.Vector3().crossVectors(state.camera.up, cameraDirection).normalize();
 
-      const right = new THREE.Vector3().crossVectors(state.camera.up, cameraDirection).normalize();
-      
-      // Handle rotation first (separate from movement)
-      const currentRotation = modelRef.current.quaternion.clone();
-      const rotationSpeed = 0.05; // Adjust rotation speed as needed
-      
-      if (keysPressed.current['a']) {
-        // Rotate left (counter-clockwise around Y axis)
-        const turnLeft = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationSpeed);
-        currentRotation.premultiply(turnLeft);
-      }
-      
-      if (keysPressed.current['d']) {
-        // Rotate right (clockwise around Y axis)
-        const turnRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -rotationSpeed);
-        currentRotation.premultiply(turnRight);
-      }
-      
-      // Apply rotation
-      modelRef.current.quaternion.copy(currentRotation);
-      
-      // Handle forward/backward movement along the character's forward direction
-      const characterForward = new THREE.Vector3(0, 0, -1).applyQuaternion(modelRef.current.quaternion);
-      const characterRight = new THREE.Vector3(1, 0, 0).applyQuaternion(modelRef.current.quaternion);
-      
-      const finalMove = new THREE.Vector3();
-      if (keysPressed.current['w']) finalMove.sub(characterForward); // Move forward (negative Z)
-      if (keysPressed.current['s']) finalMove.add(characterForward); // Move backward (positive Z)
-      
-      // Apply movement if there's any
-      if (finalMove.lengthSq() > 0.001) {
-        finalMove.normalize().multiplyScalar(moveSpeed);
-        modelRef.current.position.add(finalMove);
-      }
+    // Handle movement
+    if (keysPressed.current['w']) {
+      moveDirection.add(cameraDirection);
+      currentlyMoving = true;
     }
-    
-    // Update isMoving state only if it changes
-    // Now isMoving is true for both movement and turning
-    setIsMoving(prevIsMoving => {
-      if (prevIsMoving !== currentlyMoving) {
-        console.log(`[useFrame] isMoving changing from ${prevIsMoving} to ${currentlyMoving}`);
-        return currentlyMoving;
-      }
-      return prevIsMoving;
-    });
+    if (keysPressed.current['s']) {
+      moveDirection.sub(cameraDirection);
+      currentlyMoving = true;
+    }
 
+    // Handle turning
+    if (keysPressed.current['a']) {
+      targetRotation.current += rotationSpeed;
+      isTurning = true;
+      currentlyMoving = true;
+    }
+    if (keysPressed.current['d']) {
+      targetRotation.current -= rotationSpeed;
+      isTurning = true;
+      currentlyMoving = true;
+    }
+
+    // Smooth rotation with interpolation
+    const currentRotation = ref.current.rotation.y;
+    const rotationDiff = targetRotation.current - currentRotation;
+    
+    // Normalize rotation difference to [-PI, PI]
+    const normalizedDiff = Math.atan2(Math.sin(rotationDiff), Math.cos(rotationDiff));
+    
+    // Apply smoother rotation with interpolation
+    const rotationLerpFactor = 0.05; // Reduced for more gradual turning
+    ref.current.rotation.y += normalizedDiff * rotationLerpFactor;
+
+    // Handle movement
+    if (moveDirection.lengthSq() > 0) {
+      moveDirection.normalize();
+      
+      // Calculate movement direction based on current rotation
+      const forward = new THREE.Vector3(
+        Math.sin(ref.current.rotation.y),
+        0,
+        Math.cos(ref.current.rotation.y)
+      );
+      
+      // Move the model
+      ref.current.position.x += forward.x * moveSpeed;
+      ref.current.position.z += forward.z * moveSpeed;
+      ref.current.position.y = modelPath === '/models/queen/queen-omni.glb' ? 0 : -2.0; // Keep model at floor level
+    }
+
+    setIsMoving(currentlyMoving);
     if (mixer) mixer.update(delta);
   });
 
-  return <primitive ref={ref} object={modelScene} {...props} scale={props.scale || 1} />;
+  return <primitive 
+    ref={ref} 
+    object={modelScene} 
+    {...props} 
+    scale={modelPath === '/models/queen/queen-omni.glb' ? 1.0 : 1.0} 
+    position={[0, modelPath === '/models/queen/queen-omni.glb' ? 0 : -2.0, 0]} 
+  />;
 });
 Model.displayName = 'Model';
 
@@ -441,7 +479,12 @@ function FollowCamera({ modelRef }) {
 // ----------------------------------------------------------
 
 // Menu component for the Kung Fu Chess UI
-const Menu = () => {
+const Menu = ({ onCharacterChange, onNewGame }) => {
+  const characters = [
+    { id: 'model', name: 'Default Character', path: '/models/model.glb' },
+    { id: 'queen', name: 'Queen', path: '/models/queen/queen-omni.glb' }
+  ];
+
   return (
     <div style={{
       position: 'fixed',
@@ -482,22 +525,44 @@ const Menu = () => {
         </h1>
         <div style={{
           display: 'flex',
+          flexDirection: 'column',
           gap: '10px',
-          marginTop: '10px'
+          marginTop: '10px',
+          width: '100%'
         }}>
-          <button style={{
-            padding: '8px 20px',
-            background: 'linear-gradient(45deg, #4CAF50, #2E7D32)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-          onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
+          <select 
+            onChange={(e) => onCharacterChange(e.target.value)}
+            style={{
+              padding: '8px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: 'white',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              width: '100%'
+            }}
+          >
+            {characters.map(char => (
+              <option key={char.id} value={char.path}>
+                {char.name}
+              </option>
+            ))}
+          </select>
+          <button 
+            onClick={onNewGame}
+            style={{
+              padding: '8px 20px',
+              background: 'linear-gradient(45deg, #4CAF50, #2E7D32)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+              transition: 'transform 0.2s, box-shadow 0.2s'
+            }}
+            onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
           >
             New Game
           </button>
@@ -523,39 +588,192 @@ const Menu = () => {
   );
 };
 
+// Add Lobby component
+const Lobby = ({ onBack }) => {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      background: 'rgba(0, 0, 0, 0.9)',
+      zIndex: 1000,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: 'white',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <div style={{
+        position: 'absolute',
+        top: '20px',
+        left: '20px',
+        zIndex: 1001
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            padding: '8px 20px',
+            background: 'linear-gradient(45deg, #f44336, #d32f2f)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+            transition: 'transform 0.2s, box-shadow 0.2s'
+          }}
+          onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+          onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
+        >
+          Back to Menu
+        </button>
+      </div>
+      
+      <h1 style={{
+        fontSize: '48px',
+        marginBottom: '40px',
+        background: 'linear-gradient(45deg, #ffd700, #ff8c00)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
+      }}>
+        Game Lobby
+      </h1>
+      
+      <div style={{
+        display: 'flex',
+        gap: '40px',
+        marginBottom: '40px'
+      }}>
+        <div style={{
+          textAlign: 'center',
+          padding: '20px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: '10px',
+          width: '300px'
+        }}>
+          <h2 style={{ marginBottom: '20px' }}>Player 1</h2>
+          <div style={{ height: '300px', width: '300px', background: '#333', borderRadius: '5px', overflow: 'hidden' }}>
+            <Canvas
+              shadows
+              camera={{ position: [0, 2, 5], fov: 50 }}
+              style={{ height: '100%', width: '100%' }}
+            >
+              <ambientLight intensity={0.5} />
+              <directionalLight position={[10, 10, 5]} intensity={1.5} castShadow />
+              <Suspense fallback={null}>
+                <Model position={[0, 0, 0]} scale={1.0} modelPath="/models/model.glb" />
+              </Suspense>
+              <ChessboardFloor size={10} divisions={8} />
+            </Canvas>
+          </div>
+        </div>
+        
+        <div style={{
+          textAlign: 'center',
+          padding: '20px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: '10px',
+          width: '300px'
+        }}>
+          <h2 style={{ marginBottom: '20px' }}>Player 2</h2>
+          <div style={{ height: '300px', width: '300px', background: '#333', borderRadius: '5px', overflow: 'hidden' }}>
+            <Canvas
+              shadows
+              camera={{ position: [0, 2, 5], fov: 50 }}
+              style={{ height: '100%', width: '100%' }}
+            >
+              <ambientLight intensity={0.5} />
+              <directionalLight position={[10, 10, 5]} intensity={1.5} castShadow />
+              <Suspense fallback={null}>
+                <Model position={[0, 0, 0]} scale={2.0} modelPath="/models/queen/queen-omni.glb" />
+              </Suspense>
+              <ChessboardFloor size={10} divisions={8} />
+            </Canvas>
+          </div>
+        </div>
+      </div>
+      
+      <button style={{
+        padding: '12px 40px',
+        background: 'linear-gradient(45deg, #4CAF50, #2E7D32)',
+        color: 'white',
+        border: 'none',
+        borderRadius: '5px',
+        cursor: 'pointer',
+        fontWeight: 'bold',
+        fontSize: '18px',
+        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
+        transition: 'transform 0.2s, box-shadow 0.2s'
+      }}
+      onMouseOver={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+      onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
+      >
+        Start Game
+      </button>
+    </div>
+  );
+};
+
 export default function App() {
   const modelRef = useRef();
+  const [currentModelPath, setCurrentModelPath] = useState('/models/model.glb');
+  const [showLobby, setShowLobby] = useState(false);
+
+  const handleCharacterChange = (newModelPath) => {
+    setCurrentModelPath(newModelPath);
+  };
+
+  const handleNewGame = () => {
+    setShowLobby(true);
+  };
+
+  const handleBackToMenu = () => {
+    setShowLobby(false);
+  };
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-      <Menu />
-    <Canvas
-      shadows
-      camera={{ position: [-5, 2, 5], fov: 50 }} 
-      style={{ height: '100vh', width: '100vw', background: '#222' }}
-    >
-      <ambientLight intensity={0.5} />
-      <directionalLight
-        position={[10, 10, 5]}
-        intensity={1.5} 
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
-      <Suspense fallback={null}>
-        {/* Set model position with negative Y value to place it on the floor */}
-        <Model ref={modelRef} position={[0, -2, 0]} scale={1.0} />
-      </Suspense>
-      <ChessboardFloor size={20} divisions={16} />
-      {/* Render FollowCamera unconditionally; it checks modelRef internally */}
-      <FollowCamera modelRef={modelRef} /> 
-      <OrbitControls />
-    </Canvas>
+      {!showLobby && <Menu onCharacterChange={handleCharacterChange} onNewGame={handleNewGame} />}
+      {showLobby && <Lobby onBack={handleBackToMenu} />}
+      {!showLobby && (
+        <Canvas
+          shadows
+          camera={{ position: [-5, 2, 5], fov: 50 }} 
+          style={{ height: '100vh', width: '100vw', background: '#222' }}
+        >
+          <ambientLight intensity={0.5} />
+          <directionalLight
+            position={[10, 10, 5]}
+            intensity={1.5} 
+            castShadow
+            shadow-mapSize-width={1024}
+            shadow-mapSize-height={1024}
+          />
+          <Suspense fallback={null}>
+            <Model 
+              ref={modelRef} 
+              position={[0, 0, 0]} 
+              scale={1.0} 
+              modelPath={currentModelPath} 
+            />
+          </Suspense>
+          <ChessboardFloor size={20} divisions={16} />
+          <FollowCamera modelRef={modelRef} /> 
+          <OrbitControls />
+        </Canvas>
+      )}
     </div>
   );
 }
 
-useGLTF.preload('/model.glb');
-useGLTF.preload('/Idle.glb');
-useGLTF.preload('/Kicking.glb'); 
-useGLTF.preload('/Swing Dancing.glb'); 
+// Preload all models and animations
+useGLTF.preload('/models/model.glb');
+useGLTF.preload('/models/queen/queen-omni.glb');
+useGLTF.preload('/models/Idle.glb');
+useGLTF.preload('/models/Kicking.glb'); 
+useGLTF.preload('/models/Swing Dancing.glb');
+
