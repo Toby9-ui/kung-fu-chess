@@ -188,6 +188,16 @@ const Model = forwardRef(({ modelPath, ...props }, ref) => {
       }
     }
 
+    // Process idle animations
+    if (idleAnimationsOriginal && idleAnimationsOriginal.length > 0) {
+      const idleClip = idleAnimationsOriginal.find(clip => clip.name === IDLE_ANIM_NAME);
+      if (idleClip) {
+        const renamedIdleClip = idleClip.clone();
+        renamedIdleClip.name = IDLE_ANIM_NAME;
+        finalAnimations.push(renamedIdleClip);
+      }
+    }
+
     // Process attack animations
     if (attackAnimationsOriginal && attackAnimationsOriginal.length > 0) {
       const attackClip = attackAnimationsOriginal.find(clip => clip.name === KICK_ANIM_ORIGINAL_NAME);
@@ -316,14 +326,7 @@ const Model = forwardRef(({ modelPath, ...props }, ref) => {
     console.log('[AnimationDebug] Starting new animation:', targetAction.getClip().name);
     targetAction.reset();
     targetAction.setLoop(THREE.LoopRepeat, Infinity);
-    // Adjust animation speeds
-    if (targetAction.getClip().name === MOVEMENT_ANIM_NAME) {
-      targetAction.timeScale = modelPath === '/models/queen/queen-omni.glb' ? 0.5 : 1.0; // Slower for queen
-    } else if (targetAction.getClip().name === IDLE_ANIM_NAME) {
-      targetAction.timeScale = modelPath === '/models/queen/queen-omni.glb' ? 0.7 : 1.0; // Slightly slower for queen
-    } else {
-      targetAction.timeScale = 1.0; // Normal speed for other animations
-    }
+    targetAction.timeScale = 1.0;
     targetAction.fadeIn(0.2).play();
     currentAction.current = targetAction;
   }, [isMoving, actions, mixer, triggerAnimationEffect, modelPath]);
@@ -359,11 +362,14 @@ const Model = forwardRef(({ modelPath, ...props }, ref) => {
     if (keysPressed.current['a']) {
       targetRotation.current += rotationSpeed;
       isTurning = true;
-      currentlyMoving = true;
     }
     if (keysPressed.current['d']) {
       targetRotation.current -= rotationSpeed;
       isTurning = true;
+    }
+
+    // Only set currentlyMoving to true for turning if we're also moving
+    if (isTurning && moveDirection.lengthSq() > 0) {
       currentlyMoving = true;
     }
 
@@ -395,7 +401,11 @@ const Model = forwardRef(({ modelPath, ...props }, ref) => {
       ref.current.position.y = modelPath === '/models/queen/queen-omni.glb' ? 0 : -2.0; // Keep model at floor level
     }
 
-    setIsMoving(currentlyMoving);
+    // Update isMoving state
+    if (isMoving !== currentlyMoving) {
+      setIsMoving(currentlyMoving);
+    }
+
     if (mixer) mixer.update(delta);
   });
 
